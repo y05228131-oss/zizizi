@@ -27,22 +27,26 @@
       <table class="w-full text-sm text-left text-slate-700 mb-3 bg-white rounded overflow-hidden shadow-sm">
         <thead class="bg-emerald-100 text-emerald-900">
           <tr>
-            <th class="p-2">加熱前の金属 (g) [横軸]</th>
-            <th class="p-2">結びついた酸素 (g) [縦軸]</th>
+            <th class="p-2">加熱前の金属の質量 (g) [横軸]</th>
+            <th class="p-2">結びついた酸素の質量 (g) [縦軸]</th>
+            <th class="p-2 w-20 text-center">操作</th>
           </tr>
         </thead>
         <tbody id="expTableBody">
           <tr>
             <td class="p-2"><input type="number" class="exp-x w-full p-1 border rounded" value="1.2" step="0.1" onchange="updateAll()"></td>
             <td class="p-2"><input type="number" class="exp-y w-full p-1 border rounded" value="0.3" step="0.05" onchange="updateAll()"></td>
+            <td class="p-2 text-center"><button onclick="deleteRow(this)" class="px-2 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs font-bold">🗑️ 削除</button></td>
           </tr>
           <tr>
             <td class="p-2"><input type="number" class="exp-x w-full p-1 border rounded" value="2.4" step="0.1" onchange="updateAll()"></td>
             <td class="p-2"><input type="number" class="exp-y w-full p-1 border rounded" value="0.6" step="0.05" onchange="updateAll()"></td>
+            <td class="p-2 text-center"><button onclick="deleteRow(this)" class="px-2 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs font-bold">🗑️ 削除</button></td>
           </tr>
           <tr>
             <td class="p-2"><input type="number" class="exp-x w-full p-1 border rounded" value="3.6" step="0.1" onchange="updateAll()"></td>
             <td class="p-2"><input type="number" class="exp-y w-full p-1 border rounded" value="0.9" step="0.05" onchange="updateAll()"></td>
+            <td class="p-2 text-center"><button onclick="deleteRow(this)" class="px-2 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs font-bold">🗑️ 削除</button></td>
           </tr>
         </tbody>
       </table>
@@ -98,12 +102,12 @@
           },
           scales: {
             x: { 
-              title: { display: true, text: '金属の質量 (g)', font: { weight: 'bold', size: 14 } }, 
-              min: 0, max: 10 
+              title: { display: true, text: '加熱前の金属の質量 (g)', font: { weight: 'bold', size: 14 } }, 
+              min: 0
             },
             y: { 
               title: { display: true, text: '結びついた酸素の質量 (g)', font: { weight: 'bold', size: 14 } }, 
-              min: 0, max: 5 
+              min: 0
             }
           }
         }
@@ -117,8 +121,23 @@
       tr.innerHTML = `
         <td class="p-2"><input type="number" class="exp-x w-full p-1 border rounded" value="" step="0.1" onchange="updateAll()"></td>
         <td class="p-2"><input type="number" class="exp-y w-full p-1 border rounded" value="" step="0.05" onchange="updateAll()"></td>
+        <td class="p-2 text-center"><button onclick="deleteRow(this)" class="px-2 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded text-xs font-bold">🗑️ 削除</button></td>
       `;
       tbody.appendChild(tr);
+    }
+
+    function deleteRow(btn) {
+      const row = btn.closest('tr');
+      row.remove();
+      updateAll();
+    }
+
+    // きりの良い上限値を求めるオートスケール用関数
+    function getNiceMax(val, defaultVal) {
+      if (!val || val <= 0) return defaultVal;
+      const target = val * 1.25;
+      const step = target > 5 ? 1 : (target > 1 ? 0.5 : 0.1);
+      return Math.ceil(target / step) * step;
     }
 
     function updateAll() {
@@ -126,6 +145,7 @@
       const ys = document.querySelectorAll('.exp-y');
       const points = [];
       let sumX2 = 0, sumXY = 0;
+      let maxX = 0, maxY = 0;
 
       xs.forEach((input, i) => {
         const x = parseFloat(input.value);
@@ -134,6 +154,8 @@
           points.push({x, y});
           sumX2 += x * x;
           sumXY += x * y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
         }
       });
 
@@ -142,7 +164,14 @@
         slope = sumXY / sumX2;
       }
 
-      chart.data.datasets[0].data = [{x: 0, y: 0}, {x: 10, y: 10 * slope}];
+      // 入力された数値の最大値に合わせて軸の上限（スケール）を自動変動させる
+      const limitX = getNiceMax(maxX, 5);
+      const limitY = getNiceMax(maxY, 2);
+
+      chart.options.scales.x.max = limitX;
+      chart.options.scales.y.max = limitY;
+
+      chart.data.datasets[0].data = [{x: 0, y: 0}, {x: limitX, y: limitX * slope}];
       chart.data.datasets[1].data = points;
       chart.update();
 
@@ -156,28 +185,23 @@
       }
     }
 
-    // 軸タイトルや見出しを合成して綺麗な画像をダウンロードする関数
     function downloadChartWithTitles() {
       const metalText = document.getElementById('metalSelect').options[document.getElementById('metalSelect').selectedIndex].text;
       const ratioText = document.getElementById('massRatio').innerText;
       const lineText = document.getElementById('lineEq').innerText;
 
-      // 一時的なキャンバスを作成
       const tempCanvas = document.createElement('canvas');
       const tempCtx = tempCanvas.getContext('2d');
       const origCanvas = document.getElementById('mainChart');
 
-      // 余白やヘッダー枠を計算したサイズを設定
       const paddingHeader = 70;
       const paddingFooter = 40;
       tempCanvas.width = origCanvas.width;
       tempCanvas.height = origCanvas.height + paddingHeader + paddingFooter;
 
-      // 背景を白で塗る
       tempCtx.fillStyle = '#ffffff';
       tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
 
-      // タイトルヘッダーの描画
       tempCtx.fillStyle = '#1e293b';
       tempCtx.font = 'bold 18px sans-serif';
       tempCtx.textAlign = 'center';
@@ -187,10 +211,8 @@
       tempCtx.font = 'bold 14px sans-serif';
       tempCtx.fillText(`傾向線: ${lineText}  |  質量比 (金属 : 酸素) = ${ratioText}`, tempCanvas.width / 2, 52);
 
-      // 元のグラフキャンバスをコピー描画
       tempCtx.drawImage(origCanvas, 0, paddingHeader);
 
-      // 画像としてダウンロード
       const link = document.createElement('a');
       link.download = `${metalText}_グラフ解析結果.png`;
       link.href = tempCanvas.toDataURL('image/png');
